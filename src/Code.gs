@@ -11,11 +11,6 @@ function transformGoogleDriveUrl(url) {
   return url;
 }
 
-function doGet() {
-  return HtmlService.createHtmlOutputFromFile('index')
-    .setTitle('Bài Kiểm Tra Online');
-}
-
 // ==========================================================================================
 // HÀM XỬ LÝ ĐĂNG NHẬP VÀ BÀI KIỂM TRA (GIỮ NGUYÊN)
 // ==========================================================================================
@@ -36,6 +31,7 @@ function getTestGroups() {
   var props = PropertiesService.getScriptProperties();
   var cachedGroups = props.getProperty('testGroups');
   if (cachedGroups) {
+    Logger.log('Returning test groups from cache.');
     return JSON.parse(cachedGroups);
   }
   var sheet = SpreadsheetApp.openById('1YRQySkiMm-_y_18bKLlX8isbvxzb2rPyuC0bry-DdlM').getSheetByName('CH');
@@ -128,8 +124,7 @@ function getTrainingDocuments() {
   var sheet = SpreadsheetApp.openById('1YRQySkiMm-_y_18bKLlX8isbvxzb2rPyuC0bry-DdlM').getSheetByName('Tai_lieu');
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
-  var data = sheet.getRange(2, 2, lastRow - 1, 5).getValues();
-  // B: skill, C: link, D: unused, E: note, F: group
+  var data = sheet.getRange(2, 2, lastRow - 1, 5).getValues(); // B: skill, C: link, D: unused, E: note, F: group
   var documents = [];
   for (var i = 0; i < data.length; i++) {
     if (data[i][0] && data[i][1]) {
@@ -228,7 +223,7 @@ function getPersonnelData() {
     if (genderColumnIndex === 0) throw new Error('Không tìm thấy cột "GIỚI TÍNH" trong sheet Skill_Matrix');
     var dataRange = sheet.getRange(2, 2, lastRow - 1, lastColumn - 1);
     var data = dataRange.getValues();
-    
+
     var personnel = [];
     for (var i = 0; i < data.length; i++) {
       var row = data[i];
@@ -245,7 +240,7 @@ function getPersonnelData() {
         var targetValue = row[colSheet - 2] || 0;
         targetSkillsData.push({ name: targetName, target: parseFloat(targetValue) || 0 });
       }
-      
+
       var matchedSkills = [];
       skills.forEach(function(skill) {
         var targetObj = targetSkillsData.find(function(ts) { return ts.name === skill.name; });
@@ -283,13 +278,13 @@ function getPersonnelData() {
         if (isNaN(numericSkillValueRadar)) {
             numericSkillValueRadar = 0;
         }
-        
+
         radarChartSkillsData.push({
           name: skillNameRadar,
           value: numericSkillValueRadar
         });
       }
-      
+
       const skillToSwap1_Name = "Kỹ năng thuyết trình";
       const skillToSwap2_Name = "Sử dụng Google Sheets, Google drive";
 
@@ -313,7 +308,7 @@ function getPersonnelData() {
             if (skill1_Index === -1) Logger.log('Radar skill to swap not found: "' + skillToSwap1_Name + '"');
             if (skill2_Index === -1) Logger.log('Radar skill to swap not found: "' + skillToSwap2_Name + '"');
       }
-      
+
       personnel.push({
         employeeCode: row[0] ? row[0].toString().trim() : 'N/A',
         fullName: row[1] || 'N/A',
@@ -323,7 +318,6 @@ function getPersonnelData() {
         materialGroup: row[9] || 'N/A',
         overallSkills: overallSkills,
         imageUrl: imageUrl,
-  
         jobDescriptionLink: jobDescriptionLink,
         skills: matchedSkills,
         replacements: replacements,
@@ -361,7 +355,6 @@ function getRoadmapData() {
 
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) return [];
-
     var data = sheet.getRange(2, 1, lastRow - 1, 9).getDisplayValues(); // Get display values for dates/numbers
 
     var roadmap = [];
@@ -402,9 +395,8 @@ function updateRoadmapProgress(rowIndex, progressValue) {
     }
 
     // Column I (index 8 in 0-based array, so col 9 in 1-based sheet)
-    sheet.getRange(rowIndex, 9).setValue(progressValue + '%'); 
+    sheet.getRange(rowIndex, 9).setValue(progressValue + '%');
     Logger.log('Updated roadmap progress for row ' + rowIndex + ' to ' + progressValue + '%');
-
     // Clear roadmap cache after update
     PropertiesService.getScriptProperties().deleteProperty('roadmapDataCache');
     return { success: true };
@@ -428,4 +420,124 @@ function onSpreadsheetChange() {
   clearAllCaches();
   // Gọi hàm xóa tất cả bộ nhớ đệm
   Logger.log('Caches cleared automatically due to spreadsheet change.');
+}
+
+// ==========================================================================================
+// HÀM XỬ LÝ YÊU CẦU API TỪ CLIENT (NETLIFY)
+// ==========================================================================================
+function doGet(e) {
+  var action = e.parameter.action;
+  var result;
+
+  try {
+    switch (action) {
+      case 'checkLogin':
+        result = checkLogin(e.parameter.employeeCode);
+        break;
+      case 'getTestGroups':
+        result = getTestGroups();
+        break;
+      case 'getRandomQuestions':
+        result = getRandomQuestions(e.parameter.testGroup);
+        break;
+      case 'getTrainingDocuments':
+        result = getTrainingDocuments();
+        break;
+      case 'getTestHistory':
+        result = getTestHistory(e.parameter.employeeCode);
+        break;
+      case 'getPersonnelData':
+        result = getPersonnelData();
+        break;
+      case 'getRoadmapData':
+        result = getRoadmapData();
+        break;
+      case 'clearAllCaches':
+        clearAllCaches();
+        result = { success: true, message: 'All caches cleared.' };
+        break;
+      default:
+        return ContentService.createTextOutput(JSON.stringify({ error: 'Invalid action', action: action }))
+          .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // Cần thêm tiêu đề CORS cho phản hồi GET
+    var output = ContentService.createTextOutput(JSON.stringify(result));
+    output.setMimeType(ContentService.MimeType.JSON);
+    output.setHeaders({ 'Access-Control-Allow-Origin': '*' }); // Cho phép mọi tên miền
+    return output;
+
+  } catch (error) {
+    Logger.log('API Error for action ' + action + ': ' + error.message + ' Stack: ' + error.stack);
+    var errorOutput = ContentService.createTextOutput(JSON.stringify({ error: error.message, stack: error.stack }));
+    errorOutput.setMimeType(ContentService.MimeType.JSON);
+    errorOutput.setHeaders({ 'Access-Control-Allow-Origin': '*' });
+    return errorOutput;
+  }
+}
+
+function doPost(e) {
+  var action = e.parameter.action;
+  var result;
+
+  try {
+    var requestBody = JSON.parse(e.postData.contents);
+
+    switch (action) {
+      case 'checkAnswersAndSave':
+        result = checkAnswersAndSave(
+          requestBody.userAnswers,
+          requestBody.questions,
+          requestBody.employeeCode,
+          requestBody.fullName,
+          requestBody.testGroup
+        );
+        break;
+      case 'updateRoadmapProgress':
+        result = updateRoadmapProgress(
+          requestBody.rowIndex,
+          requestBody.progressValue
+        );
+        break;
+      default:
+        return ContentService.createTextOutput(JSON.stringify({ error: 'Invalid POST action', action: action }))
+          .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // Cần thêm tiêu đề CORS cho phản hồi POST
+    var output = ContentService.createTextOutput(JSON.stringify(result));
+    output.setMimeType(ContentService.MimeType.JSON);
+    output.setHeaders({ 'Access-Control-Allow-Origin': '*' }); // Cho phép mọi tên miền
+    return output;
+
+  } catch (error) {
+    Logger.log('API POST Error for action ' + action + ': ' + error.message + ' Stack: ' + error.stack);
+    var errorOutput = ContentService.createTextOutput(JSON.stringify({ error: error.message, stack: error.stack }));
+    errorOutput.setMimeType(ContentService.MimeType.JSON);
+    errorOutput.setHeaders({ 'Access-Control-Allow-Origin': '*' });
+    return errorOutput;
+  }
+}
+
+// Hàm này là bắt buộc cho CORS Preflight request (OPTIONS)
+function doOptions(e) {
+  var output = ContentService.createTextOutput('');
+  output.setHeaders({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Max-Age': 86400 // Cache preflight for 1 day
+  });
+  return output;
+}
+// Hàm này là bắt buộc cho CORS Preflight request (OPTIONS)
+function doOptions(e) {
+  var output = ContentService.createTextOutput('');
+  output.setHeaders({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type', // Quan trọng cho các yêu cầu POST với Content-Type: application/json
+    'Access-Control-Max-Age': 86400 // Cache preflight for 1 day
+  });
+  return output;
 }
