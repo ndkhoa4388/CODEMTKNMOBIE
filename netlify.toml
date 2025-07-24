@@ -1,2 +1,10 @@
 [build]
-  publish = "public"
+  publish = "public" # Thư mục chứa các tệp frontend của bạn
+
+# Quy tắc chuyển hướng để xử lý CORS
+[[redirects]]
+  from = "/api/*" # Mọi yêu cầu đến /api/ trên tên miền Netlify của bạn
+  to = "https://script.google.com/macros/s/AKfycbwmPWHiU7mbh2gWW1ABUSL4Gdw48Tj8nqVqmbhR_zKLKzj7uW55xKT576LFodZ2S-GO/exec/:splat" # Sẽ được chuyển hướng đến API Apps Script của bạn
+  status = 200 # Đảm bảo phản hồi là 200 OK
+  force = true # Buộc Netlify thực hiện rewrite, có thể giúp xử lý CORS
+  # headers = {Access-Control-Allow-Origin = "*"} # Netlify thường tự thêm, nhưng có thể thêm nếu cần
